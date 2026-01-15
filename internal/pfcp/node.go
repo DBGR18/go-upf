@@ -116,20 +116,26 @@ func (s *Sess) CreatePDR(req *ie.IE) error {
 				break
 			}
 			urrids[v] = struct{}{}
-			urrInfo, ok := s.URRIDs[v]
-			if ok {
-				urrInfo.refPdrNum++
-			}
 		}
 	}
 
-	s.PDRIDs[pdrid] = &PDRInfo{
-		RelatedURRIDs: urrids,
-	}
-
+	// Create PDR in driver first, only add to map if successful
 	err = s.rnode.driver.CreatePDR(s.LocalID, req)
 	if err != nil {
 		return err
+	}
+
+	// Only increment URR ref count and add to PDRIDs map after successful creation
+	for urrid := range urrids {
+		urrInfo, ok := s.URRIDs[urrid]
+		if ok {
+			urrInfo.refPdrNum++
+		}
+	}
+
+	// Only add to PDRIDs map after successful creation
+	s.PDRIDs[pdrid] = &PDRInfo{
+		RelatedURRIDs: urrids,
 	}
 
 	return nil

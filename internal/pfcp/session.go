@@ -78,11 +78,14 @@ func (s *PfcpServer) handleSessionEstablishmentRequest(
 	}
 
 	CreatedPDRList := make([]*ie.IE, 0)
+	var pdrError error
 
 	for _, i := range req.CreatePDR {
 		err = sess.CreatePDR(i)
 		if err != nil {
 			sess.log.Errorf("Est CreatePDR error: %+v", err)
+			pdrError = err
+			break
 		}
 
 		ueIPAddress := getUEAddressFromPDR(i)
@@ -95,6 +98,23 @@ func (s *PfcpServer) handleSessionEstablishmentRequest(
 				ie.NewUEIPAddress(2, ueIPv4, "", 0, 0),
 			))
 		}
+	}
+
+	// If PDR creation failed, rollback and return error
+	if pdrError != nil {
+		// Delete the session to cleanup all resources including URR timers
+		rnode.DeleteSess(sess.LocalID)
+
+		// Return failure response with appropriate cause
+		rsp := message.NewSessionEstablishmentResponse(
+			0, 0, fseid.SEID, req.Header.SequenceNumber, 0,
+			ie.NewCause(ie.CauseRuleCreationModificationFailure),
+		)
+		err = s.sendRspTo(rsp, addr)
+		if err != nil {
+			s.log.Errorln(err)
+		}
+		return
 	}
 
 	var v4 net.IP
